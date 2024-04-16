@@ -12,11 +12,146 @@ from tkinter import filedialog
 import pyodbc
 import cx_Oracle
 
+def toggle_dark_mode():
+    if dark_mode_var.get() == 1:
+        # Apply dark theme
+        style.theme_use('clam')  
+        root.config(bg='black')
+        notebook.config(bg='dark grey')
+        for widget in root.winfo_children():
+            widget.config(bg='dark grey', fg='white')
+    else:
+        # Apply default theme
+        style.theme_use('default')
+        root.config(bg='')
+        notebook.config(bg='')
+        for widget in root.winfo_children():
+            widget.config(bg='', fg='')
 
+# MongoDB Service Status Check
+def check_mongodb_service_status():
+    try:
+        result = os.system("systemctl is-active mongod")
+        if result == 0:
+            print("MongoDB service is running.")
+            return True
+        else:
+            print("MongoDB service is not running.")
+            return False
+    except Exception as e:
+        print(f"Error checking MongoDB service status: {e}")
+        return False
+
+
+# MongoDB Database Status Check
+def check_database_status(host, port, dbname, username, password):
+    if not check_mongodb_service_status():
+        return
+
+    try:
+        if host == "":
+            host = "localhost"
+        uri = f"mongodb://{username}:{password}@{host}:{port}/{dbname}"
+        client = MongoClient(uri)
+        db = client[dbname]
+        collection_names = db.list_collection_names()
+        print(f"Database is online. Available collections: {collection_names}")
+        client.close()
+    except ConnectionFailure as e:
+        print(f"Database is offline. Error: {e}")
+
+
+# MS SQL Database Status Check
+def check_mssql_status(server, database, username, password):
+    try:
+        conn = pyodbc.connect(f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}")
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sys.tables;")
+        tables = cursor.fetchall()
+        conn.close()
+        print(f"MS SQL is online. Available tables: {tables}")
+    except Exception as e:
+        print(f"Error: {e}")
+
+
+# Oracle Database Status Check
+def check_oracle_status(host, port, sid, username, password):
+    try:
+        dsn = cx_Oracle.makedsn(host, port, sid)
+        connection = cx_Oracle.connect(username, password, dsn)
+        cursor = connection.cursor()
+        cursor.execute("SELECT 'Connected' FROM dual")
+        result = cursor.fetchone()[0]
+        connection.close()
+        return f"Oracle is online. Status: {result}"
+    except Exception as e:
+        return f"Error: {e}"
+    
+# MySQL Check
+def check_mysql_status(host, port, dbname, username, password):
+    try:
+        conn = mysql.connector.connect(
+            host=host,
+            port=port,
+            user=username,
+            password=password,
+            database=dbname
+        )
+        cursor = conn.cursor()
+        cursor.execute("SHOW TABLES;")
+        tables = cursor.fetchall()
+        conn.close()
+        return f"MySQL is online. Available tables: {tables}"
+    except Exception as e:
+        return f"Error: {e}"
+    
+# MariaDB Check
+def check_mariadb_status(host, port, dbname, username, password):
+    try:
+        conn = mysql.connector.connect(
+            host=host,
+            port=port,
+            user=username,
+            password=password,
+            database=dbname
+        )
+        cursor = conn.cursor()
+        cursor.execute("SHOW TABLES;")
+        tables = cursor.fetchall()
+        conn.close()
+        return f"MariaDB is online. Available tables: {tables}"
+    except Exception as e:
+        return f"Error: {e}"
+    
+# PostgreSQL Check
+def check_postgresql_status(host, port, dbname, username, password):
+    try:
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            dbname=dbname,
+            user=username,
+            password=password
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT 'Connected';")
+        result = cursor.fetchone()[0]
+        conn.close()
+        return f"PostgreSQL is online. Status: {result}"
+    except Exception as e:
+        return f"Error: {e}"
+
+# GUI Functions
 def run_with_admin():
     if ctypes.windll.shell32.IsUserAnAdmin() == 0:
-        # If not running as admin, relaunch the app with admin rights
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+
+
+def upload_db_file():
+    file_path = filedialog.askopenfilename(filetypes=[("SQLite Database", "*.db")])
+    sqlite_file_entry.delete(0, tk.END)
+    sqlite_file_entry.insert(0, file_path)
+
 
 def check_status():
     tab = notebook.select()
@@ -37,75 +172,26 @@ def check_status():
             except Exception as e:
                 status = f"Error: {e}"
 
-    elif tab_name == "MySQL":
-        host = mysql_host_entry.get()
-        port = mysql_port_entry.get()
-        dbname = mysql_dbname_entry.get()
-        username = mysql_username_entry.get()
-        password = mysql_password_entry.get()
-        try:
-            conn = mysql.connector.connect(
-                host=host,
-                port=port,
-                user=username,
-                password=password,
-                database=dbname
-            )
-            cursor = conn.cursor()
-            cursor.execute("SHOW TABLES")
-            tables = cursor.fetchall()
-            conn.close()
-            status = f"MySQL is online. Available tables: {tables}"
-        except Exception as e:
-            status = f"Error: {e}"
+    elif tab_name == "MS SQL":
+        server = mssql_server_entry.get()
+        database = mssql_dbname_entry.get()
+        username = mssql_username_entry.get()
+        password = mssql_password_entry.get()
+        if not server or not database:
+            status = "Error: Server and Database name are required."
+        else:
+            check_mssql_status(server, database, username, password)
 
-    elif tab_name == "PostgreSQL":
-        host = postgresql_host_entry.get()
-        port = postgresql_port_entry.get()
-        dbname = postgresql_dbname_entry.get()
-        username = postgresql_username_entry.get()
-        password = postgresql_password_entry.get()
-        try:
-            conn = psycopg2.connect(
-                host=host,
-                port=port,
-                dbname=dbname,
-                user=username,
-                password=password
-            )
-            cursor = conn.cursor()
-            cursor.execute("SELECT tablename FROM pg_tables WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema';")
-            tables = cursor.fetchall()
-            conn.close()
-            status = f"PostgreSQL is online. Available tables: {tables}"
-        except Exception as e:
-            status = f"Error: {e}"
-
-    elif tab_name == "MariaDB":
-        host = mariadb_host_entry.get()
-        port = mariadb_port_entry.get()
-        dbname = mariadb_dbname_entry.get()
-        username = mariadb_username_entry.get()
-        password = mariadb_password_entry.get()
-        try:
-            conn = mysql.connector.connect(
-                host=host,
-                port=port,
-                user=username,
-                password=password,
-                database=dbname
-            )
-            cursor = conn.cursor()
-            cursor.execute("SHOW TABLES")
-            tables = cursor.fetchall()
-            conn.close()
-            status = f"MariaDB is online. Available tables: {tables}"
-        except Exception as e:
-            status = f"Error: {e}"
+    elif tab_name == "Oracle":
+        host = oracle_host_entry.get()
+        port = oracle_port_entry.get()
+        sid = oracle_sid_entry.get()
+        username = oracle_username_entry.get()
+        password = oracle_password_entry.get()
+        status = check_oracle_status(host, port, sid, username, password)
 
     elif tab_name == "SQLite":
         file_path = sqlite_file_entry.get()
-        
         if not file_path:
             status = "Error: Please upload a .db file."
         else:
@@ -116,80 +202,33 @@ def check_status():
                 tables = cursor.fetchall()
                 conn.close()
                 status = f"SQLite is online. Available tables: {tables}"
-                display_message(status, "success")
             except Exception as e:
                 status = f"Error: {e}"
-                display_message(status)
-    elif tab_name == "MS SQL":
-        server = mssql_server_entry.get()
-        database = mssql_dbname_entry.get()
-        username = mssql_username_entry.get()
-        password = mssql_password_entry.get()
+    elif tab_name == "PostgreSQL":
+        host = postgresql_host_entry.get()
+        port = postgresql_port_entry.get()
+        dbname = postgresql_dbname_entry.get()
+        username = postgresql_username_entry.get()
+        password = postgresql_password_entry.get()
+        status = check_postgresql_status(host, port, dbname, username, password)
         
-        if not server or not database:
-            status = "Error: Server and Database name are required."
-        else:
-            try:
-                conn = pyodbc.connect(f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={server};DATABASE={database};UID={username};PWD={password}")
-                cursor = conn.cursor()
-                cursor.execute("SELECT name FROM sys.tables;")
-                tables = cursor.fetchall()
-                conn.close()
-                status = f"MS SQL is online. Available tables: {tables}"
-            except Exception as e:
-                status = f"Error: {e}"
-    elif tab_name == "Oracle":
-        host = oracle_host_entry.get()
-        port = oracle_port_entry.get()
-        sid = oracle_sid_entry.get()
-        username = oracle_username_entry.get()
-        password = oracle_password_entry.get()
-        status = check_oracle_status(host, port, sid, username, password)
+    elif tab_name == "MariaDB":
+        host = mariadb_host_entry.get()
+        port = mariadb_port_entry.get()
+        dbname = mariadb_dbname_entry.get()
+        username = mariadb_username_entry.get()
+        password = mariadb_password_entry.get()
+        status = check_mariadb_status(host, port, dbname, username, password)
+
+    elif tab_name == "MySQL":
+        host = mysql_host_entry.get()
+        port = mysql_port_entry.get()
+        dbname = mysql_dbname_entry.get()
+        username = mysql_username_entry.get()
+        password = mysql_password_entry.get()
+        status = check_mysql_status(host, port, dbname, username, password)
 
     status_label.config(text=status)
-
-#Oracle Check
-def check_oracle_status(host, port, sid, username, password):
-    try:
-        dsn = cx_Oracle.makedsn(host, port, sid)
-        connection = cx_Oracle.connect(username, password, dsn)
-        cursor = connection.cursor()
-        
-        # Check if the connection is successful
-        cursor.execute("SELECT 'Connected' FROM dual")
-        result = cursor.fetchone()[0]
-        
-        connection.close()
-        
-        return f"Oracle is online. Status: {result}"
-        
-    except Exception as e:
-        return f"Error: {e}"
-    
-def toggle_dark_mode():
-    if dark_mode_var.get() == 1:
-        # Apply dark theme
-        style.theme_use('clam')  
-        root.config(bg='black')
-        notebook.config(bg='dark grey')
-        for widget in root.winfo_children():
-            widget.config(bg='dark grey', fg='white')
-    else:
-        # Apply default theme
-        style.theme_use('default')
-        root.config(bg='')
-        notebook.config(bg='')
-        for widget in root.winfo_children():
-            widget.config(bg='', fg='')
-
-def check_mysql_status(host, port, dbname, username, password):
-    # Implement MySQL connection and status check here
-    pass
-
-def upload_db_file():
-    file_path = filedialog.askopenfilename(filetypes=[("SQLite Database", "*.db")])
-    sqlite_file_entry.delete(0, tk.END)
-    sqlite_file_entry.insert(0, file_path)
 
 # Create main window
 root = tk.Tk()
